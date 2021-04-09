@@ -1,14 +1,20 @@
 from flask import Flask, render_template, request
 from flask_sockets import Sockets
 from utility.myDocker import ClientHandler, DockerStreamThread
+from service.terminalService import TerminalService
+from service.replayService import ReplayService
 import conf
+import os
 
 app = Flask(__name__)
 sockets = Sockets(app)
 
-@app.route('/')
-def index():
-    return render_template('index.html')
+
+@app.route('/container/<containerId>')
+def index(containerId):
+    # containerId = request.values.get('containerId')
+    return render_template('index.html', containerId=containerId)
+
 
 @app.route('/images')
 def get_images():
@@ -17,37 +23,45 @@ def get_images():
     print(images)
 
 
-@app.route('/newcontainer', methods=["GET"])
+'''
+申请新容器
+'''
+@app.route('/newcontainer')
 def get_new_container():
     image_version = request.values.get('imageVersion')
     dockerCli = ClientHandler(base_url=conf.DOCKER_HOST)
 
-    container = dockerCli.createContainer(image_version)
+    container = dockerCli.createContainer(image_version, command=["/bin/sh", "-c", "while :; do sleep 1; done"])
+    # containers = dockerCli.listContainers()
+    # container = containers[0]
     if container is None:
         return "None"
     dockerCli.startContainer(container)
     return container['Id']
 
+
+'''
+开始分析
+'''
 @app.route('/analysis')
 def start_analysis():
-    pass
+    # 漏洞重现的容器id
+    containerId = request.values.get('containerId')
+    replayService = ReplayService()
+    if replayService.isReplayContainerExist() == False:
+        replayService.createReplayContainer()
+
+    replayService.startReplayAnalysis(containerId)
 
 
-@sockets.route('/echo')
-def echo_socket(ws):
-    dockerCli = ClientHandler(base_url=conf.DOCKER_HOST, timeout=1000)
-    container_id = input()
-    # terminalExecId = dockerCli.creatTerminalExec(conf.CONTAINER_ID)
-    terminalExecId = dockerCli.creatTerminalExec(container_id)
-    terminalStream = dockerCli.startTerminalExec(terminalExecId)._sock
-
-    terminalThread = DockerStreamThread(ws, terminalStream)
-    terminalThread.start()
-
-    while not ws.closed:
-        message = ws.receive()
-        if message is not None:
-            terminalStream.send(bytes(message, encoding='utf-8'))
+'''
+生成websocket链接
+'''
+@sockets.route('/echo/<containerId>')
+def echo_socket(ws, containerId):
+    terminalService = TerminalService()
+    terminalStream = terminalService.creatTerminalExec(containerId)._sock
+    terminalService.terminalThreadCreate(ws, terminalStream)
 
 
 if __name__ == '__main__':
