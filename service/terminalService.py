@@ -15,12 +15,12 @@ class TerminalService(object):
             "tty": True,
             "stdin": True
         }
-        return self.clientHandle.containerExecCmd(containerId, execCommand, **execOptions)
+        return self.clientHandle.containerExecCmd(containerId, execCommand, socket=True, **execOptions)
 
     def terminalThreadCreate(self, ws, terminalStream):
         terminalThread = DockerStreamThread(ws, terminalStream)
         terminalThread.start()
-
+        # 接收前端发送的命令
         while not ws.closed:
             message = ws.receive()
             if message is not None:

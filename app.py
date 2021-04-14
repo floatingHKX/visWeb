@@ -47,11 +47,18 @@ def get_new_container():
 def start_analysis():
     # 漏洞重现的容器id
     containerId = request.values.get('containerId')
+    # lib版本号
+    libVersion = request.values.get('libVersion')
+    # 分析启动队列
+    analysisEnable = request.values.get('analysisEnable')
+    # 二进制文件名
+    binaryName = request.values.get('binaryName')
     replayService = ReplayService()
     if replayService.isReplayContainerExist() == False:
         replayService.createReplayContainer()
 
-    replayService.startReplayAnalysis(containerId)
+    replayService.startReplayAnalysis(containerId, binaryName, analysisEnable, libVersion)
+    return "OK"
 
 
 '''

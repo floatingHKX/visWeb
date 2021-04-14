@@ -4,7 +4,7 @@
 import docker
 import threading
 import shutil
-import io
+from io import BytesIO
 import tarfile
 import os
 
@@ -14,7 +14,7 @@ class ClientHandler(object):
     def __init__(self, **kwargs):
         self.dockerClient = docker.APIClient(**kwargs)
 
-    def containerExecCmd(self, containerId, execCommand, **execOptions):
+    def containerExecCmd(self, containerId,  execCommand, socket=False, stream=False, **execOptions):
         '''
         运行的容器执行命令
         '''
@@ -22,7 +22,7 @@ class ClientHandler(object):
         execId = self.dockerClient.exec_create(containerId, execCommand, **execOptions)
 
         # Start a previously set up exec instance.
-        return self.dockerClient.exec_start(execId, socket=True, tty=True)
+        return self.dockerClient.exec_start(execId, socket=socket, stream=stream, tty=True)
 
     def listImages(self):
         '''
@@ -68,15 +68,50 @@ class ClientHandler(object):
     def copyFromContainer(self,containerId, src, dst):
         '''
         复制文件
-
         '''
-        archive, stat = self.dockerClient.get_archive(containerId, src)
+        stream, stat = self.dockerClient.get_archive(containerId, src)
         with open(dst, "wb") as f:
-            shutil.copyfileobj(archive, f)
+            for d in stream:
+                f.write(d)
         unpacked_path = "%s@" % dst
+        os.system("rm -r %s" % unpacked_path)
         os.system("mkdir %s" % unpacked_path)
         os.system("tar xvf %s -C %s" % (dst, unpacked_path))
         os.system("rm %s" % dst)
+        return unpacked_path
+
+    def isFileExist(self, containerId, path):
+        '''
+        判断docker中文件是否存在
+        '''
+        execCommand = [
+            "/bin/sh",
+            "-c",
+            "test -d %s && echo 'It Exists'" % path]
+        execOptions = {
+            "tty": True,
+            "stdin": True
+        }
+        results = self.containerExecCmd(containerId, execCommand, stream=True, **execOptions)
+        for output in results:
+            if b"It Exists" in output:
+                return True
+        return False
+
+    def deleteFile(self, containerId, path):
+        """
+        删除docker中的文件
+        """
+        execCommand = [
+            "/bin/rm",
+            "-r",
+            path
+        ]
+        execOptions = {
+            "tty": True,
+            "stdin": True
+        }
+        self.containerExecCmd(containerId, execCommand, **execOptions)
 
 
 class DockerStreamThread(threading.Thread):
@@ -98,3 +133,13 @@ class DockerStreamThread(threading.Thread):
                 print("docker daemon socket err: %s" % e)
                 self.ws.close()
                 break
+
+
+class AnalysisStreamThread(threading.Thread):
+    def __init__(self, terminalStream):
+        super(AnalysisStreamThread, self).__init__()
+        self.terminalStream = terminalStream
+
+    def run(self):
+        for b in self.terminalStream:
+            print(str(b))
