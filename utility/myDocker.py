@@ -7,6 +7,7 @@ import shutil
 from io import BytesIO
 import tarfile
 import os
+import subprocess
 
 
 class ClientHandler(object):
@@ -22,7 +23,7 @@ class ClientHandler(object):
         execId = self.dockerClient.exec_create(containerId, execCommand, **execOptions)
 
         # Start a previously set up exec instance.
-        return self.dockerClient.exec_start(execId, socket=socket, stream=stream, tty=True)
+        return execId, self.dockerClient.exec_start(execId, socket=socket, stream=stream, tty=True)
 
     def listImages(self):
         '''
@@ -65,6 +66,18 @@ class ClientHandler(object):
         '''
         self.dockerClient.start(container=containerId)
 
+    def stopContainer(self, containerId):
+        '''
+        关闭一个容器
+        '''
+        try:
+            self.dockerClient.stop(container=containerId)
+        except docker.errors.APIError as e:
+            print("error: %s" % e)
+            return False
+        else:
+            return True
+
     def copyFromContainer(self,containerId, src, dst):
         '''
         复制文件
@@ -92,7 +105,7 @@ class ClientHandler(object):
             "tty": True,
             "stdin": True
         }
-        results = self.containerExecCmd(containerId, execCommand, stream=True, **execOptions)
+        execID, results = self.containerExecCmd(containerId, execCommand, stream=True, **execOptions)
         for output in results:
             if b"It Exists" in output:
                 return True
@@ -112,6 +125,14 @@ class ClientHandler(object):
             "stdin": True
         }
         self.containerExecCmd(containerId, execCommand, **execOptions)
+
+    def execDockerCmd(self, dockerCmd):
+        """
+        通过命令行执行docker命令
+        """
+        p = subprocess.Popen(dockerCmd, stdout=subprocess.PIPE, shell=True)
+        # p.wait()
+        return p
 
 
 class DockerStreamThread(threading.Thread):
@@ -136,10 +157,11 @@ class DockerStreamThread(threading.Thread):
 
 
 class AnalysisStreamThread(threading.Thread):
-    def __init__(self, terminalStream):
+    def __init__(self, outputs):
         super(AnalysisStreamThread, self).__init__()
-        self.terminalStream = terminalStream
+        self.outputs = outputs
 
     def run(self):
-        for b in self.terminalStream:
-            print(str(b))
+        for output in self.outputs:
+            print(output.decode('utf-8'), end='')
+        # print(self.outputs.read())

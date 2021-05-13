@@ -45,6 +45,7 @@ def get_new_container():
 '''
 @app.route('/analysis')
 def start_analysis():
+    projectId = request.values.get('projectId')
     # 漏洞重现的容器id
     containerId = request.values.get('containerId')
     # lib版本号
@@ -54,11 +55,23 @@ def start_analysis():
     # 二进制文件名
     binaryName = request.values.get('binaryName')
     replayService = ReplayService()
-    if replayService.isReplayContainerExist() == False:
-        replayService.createReplayContainer()
+    # if replayService.isReplayContainerExist() == False:
+    #     replayService.createReplayContainer()
+    execId = replayService.startReplayAnalysis(projectId, containerId, binaryName, analysisEnable, libVersion)
+    return "execId"
 
-    replayService.startReplayAnalysis(containerId, binaryName, analysisEnable, libVersion)
-    return "OK"
+'''
+中断分析
+'''
+@app.route('/terminate')
+def terminate_analysis():
+    projectId = request.values.get('projectId')
+
+    replayService = ReplayService()
+    result = replayService.terminateAnalysis(projectId)
+    return result
+
+
 
 
 '''
@@ -67,7 +80,7 @@ def start_analysis():
 @sockets.route('/echo/<containerId>')
 def echo_socket(ws, containerId):
     terminalService = TerminalService()
-    terminalStream = terminalService.creatTerminalExec(containerId)._sock
+    execId, terminalStream = terminalService.creatTerminalExec(containerId)._sock
     terminalService.terminalThreadCreate(ws, terminalStream)
 
 
