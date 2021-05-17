@@ -4,10 +4,34 @@ from utility.myDocker import ClientHandler, DockerStreamThread
 from service.terminalService import TerminalService
 from service.replayService import ReplayService
 import conf
+from flask_cors import *
+from flask import jsonify
+from utility.dataBase import DataBase
+from service.manageService import ManageService
 import os
+from flask_apscheduler import APScheduler
+
+
+class SchedulerConfig(object):
+    JOBS = [
+        {
+            'id': 'flash_projects',
+            'func': '__main__:flash_projects',
+            'args': None,
+            'trigger': 'interval',
+            'seconds': 5
+        }
+    ]
+
+
+def flash_projects():
+    print('schedule task:xxx')
+
 
 app = Flask(__name__)
+CORS(app, supports_credentials=True)
 sockets = Sockets(app)
+app.config.from_object(SchedulerConfig())
 
 
 @app.route('/container/<containerId>')
@@ -28,24 +52,28 @@ def get_images():
 '''
 @app.route('/newcontainer')
 def get_new_container():
-    image_version = request.values.get('imageVersion')
+    image_version = request.values.get('os')
+    userId = request.values.get('userId')
     dockerCli = ClientHandler(base_url=conf.DOCKER_HOST)
+    manageService = ManageService()
 
     container = dockerCli.createContainer(image_version, command=["/bin/sh", "-c", "while :; do sleep 1; done"])
-    # containers = dockerCli.listContainers()
-    # container = containers[0]
     if container is None:
-        return "None"
+        return {'success': False}
     dockerCli.startContainer(container)
-    return container['Id']
+    result = {'containerId': container['Id'], 'success': True}
+    manageService.add_container(userId, container['Id'])
+    # result = {'Id': 55, 'Success': True}
+    return jsonify(result)
 
 
 '''
 开始分析
 '''
-@app.route('/analysis')
+@app.route('/analysis', methods = ['POST','GET'])
 def start_analysis():
-    projectId = request.values.get('projectId')
+    # 获得用户id
+    userId = request.values.get('userId')
     # 漏洞重现的容器id
     containerId = request.values.get('containerId')
     # lib版本号
@@ -54,25 +82,61 @@ def start_analysis():
     analysisEnable = request.values.get('analysisEnable')
     # 二进制文件名
     binaryName = request.values.get('binaryName')
+    # 任务名
+    projectName = request.values.get('projectName')
     replayService = ReplayService()
-    # if replayService.isReplayContainerExist() == False:
-    #     replayService.createReplayContainer()
-    execId = replayService.startReplayAnalysis(projectId, containerId, binaryName, analysisEnable, libVersion)
-    return "execId"
+    result = replayService.startReplayAnalysis(userId, containerId, binaryName, analysisEnable, libVersion, projectName)
+    return jsonify(result)
 
 '''
 中断分析
 '''
-@app.route('/terminate')
+@app.route('/terminate', methods = ['POST','GET'])
 def terminate_analysis():
     projectId = request.values.get('projectId')
-
     replayService = ReplayService()
     result = replayService.terminateAnalysis(projectId)
     return result
 
+"""
+删除任务
+"""
+@app.route('/deleteproject')
+def delete_project():
+    projectId = request.values.get('projectId')
+    manageService = ManageService()
+    return manageService.delete_project(projectId)
 
+'''
+删除容器
+'''
+@app.route('/container/delete',methods = ['POST','GET'])
+def delete_container():
+    containerId = request.values.get('containerId')
+    manageService = ManageService()
+    manageService.delete_container(containerId)
+    return "OK"
 
+"""
+获得containerId
+"""
+@app.route('/container/getid')
+def get_containerId_by_userId():
+    userId = request.values.get('userId')
+    manageService = ManageService()
+    containerId = manageService.get_containerId(userId)
+    if containerId is None:
+        return jsonify({'success': False})
+    return jsonify({'containerId': containerId, 'success': True})
+
+@app.route('/projects')
+def get_projectsInfoList():
+    userId = request.values.get('userId')
+    pageNo = int(request.values.get('pageNo'), 10)
+    pageSize = int(request.values.get('pageSize'), 10)
+    manageService = ManageService()
+    results = manageService.get_projects(userId, pageNo, pageSize)
+    return jsonify(results)
 
 '''
 生成websocket链接
@@ -80,11 +144,20 @@ def terminate_analysis():
 @sockets.route('/echo/<containerId>')
 def echo_socket(ws, containerId):
     terminalService = TerminalService()
-    execId, terminalStream = terminalService.creatTerminalExec(containerId)._sock
-    terminalService.terminalThreadCreate(ws, terminalStream)
+    execId, terminalStream = terminalService.creatTerminalExec(containerId)
+    terminalService.terminalThreadCreate(ws, terminalStream._sock)
 
+def init_filedir():
+    if not os.access(conf.HOST_WOKR_PATH, os.F_OK):
+        print("workplace %s do not exist." % conf.HOST_WOKR_PATH)
+        os.system("mkdir %s" % conf.HOST_WOKR_PATH)
+        print("workplace %s create now." % conf.HOST_WOKR_PATH)
 
 if __name__ == '__main__':
+    init_filedir()
+    scheduler = APScheduler()
+    scheduler.init_app(app)
+    scheduler.start()
     from gevent import pywsgi
     from geventwebsocket.handler import WebSocketHandler
     server = pywsgi.WSGIServer(('', 5000), app, handler_class=WebSocketHandler)

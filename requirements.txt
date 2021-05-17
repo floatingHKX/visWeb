@@ -1,3 +1,6 @@
 Flask==0.12.2
 Flask-Sockets
-docker==5.0.0
+flask-cors
+Werkzeug==0.16.1
+flask_apscheduler
+#docker==5.0.0

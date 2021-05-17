@@ -3,12 +3,10 @@
 
 import docker
 import threading
-import shutil
-from io import BytesIO
-import tarfile
 import os
 import subprocess
-
+import conf
+from utility.dataBase import DataBase
 
 class ClientHandler(object):
 
@@ -50,13 +48,14 @@ class ClientHandler(object):
         def is_exist(image_version):
             images = self.listImages()
             for image in images:
-                if image_version == image['RepoTags'][0]:
-                    return True
+                if image_version in image['RepoTags'][0]:
+                    return image['RepoTags'][0]
             return False
 
-        if is_exist(image_version) is False:
+        imageName = is_exist(image_version)
+        if imageName is False:
             return None
-        container = self.dockerClient.create_container(image=image_version, **kwargs)
+        container = self.dockerClient.create_container(image=imageName, **kwargs)
         return container
 
     def startContainer(self, containerId):
@@ -86,7 +85,7 @@ class ClientHandler(object):
         with open(dst, "wb") as f:
             for d in stream:
                 f.write(d)
-        unpacked_path = "%s@" % dst
+        unpacked_path = "%s_unpacked" % dst
         os.system("rm -r %s" % unpacked_path)
         os.system("mkdir %s" % unpacked_path)
         os.system("tar xvf %s -C %s" % (dst, unpacked_path))
@@ -134,6 +133,17 @@ class ClientHandler(object):
         # p.wait()
         return p
 
+    def deleteContainer(self, containerId):
+        """
+        删除容器
+        """
+        try:
+            self.dockerClient.stop(containerId)
+            self.dockerClient.remove_container(containerId)
+        except BaseException as e:
+            print(e)
+
+
 
 class DockerStreamThread(threading.Thread):
     def __init__(self, ws, terminalStream):
@@ -157,11 +167,28 @@ class DockerStreamThread(threading.Thread):
 
 
 class AnalysisStreamThread(threading.Thread):
-    def __init__(self, outputs):
+    def __init__(self, outputs, containerId, logPath, projectId):
         super(AnalysisStreamThread, self).__init__()
         self.outputs = outputs
+        self.containerId = containerId
+        self.logPath = logPath
+        self.projectId = projectId
 
     def run(self):
-        for output in self.outputs:
-            print(output.decode('utf-8'), end='')
+        with open(self.logPath+'/analysis_output', 'w') as f:
+            for output in self.outputs:
+                print(output.decode('utf-8'), end='')
+                f.write(output.decode('utf-8'))
+                f.flush()
+            f.close()
+        print('analysis over')
+        clientHandle = ClientHandler(base_url=conf.DOCKER_HOST)
+        clientHandle.stopContainer(self.containerId)
+        if os.access(self.logPath+'/html', os.F_OK):
+            compress_path = "%s/report.tar.gz" % self.logPath
+            report_path = "%s/html" % self.logPath
+            os.system("tar -zcvf %s %s" % (compress_path, report_path))
+        dataBase = DataBase()
+        dataBase.update_projects_status_by_projectId(1, self.projectId)
+        print('delete analysis container')
         # print(self.outputs.read())

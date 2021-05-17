@@ -8,12 +8,13 @@ class TerminalService(object):
 
     def creatTerminalExec(self, containerId):
         execCommand = [
-            "/bin/sh",
+            "/bin/bash",
             "-c",
-            'TERM=xterm-256color; export TERM; [ -x /bin/bash ] && ([ -x /usr/bin/script ] && /usr/bin/script -q -c "/bin/bash" /dev/null || exec /bin/bash) || exec /bin/sh']
+            'TERM=xterm-256color; export TERM; [ -x /bin/bash ] && ([ -x /usr/bin/script ] && /usr/bin/script -q -c "/bin/bash" /dev/null || exec /bin/bash) || exec /bin/sh'
+        ]
         execOptions = {
             "tty": True,
-            "stdin": True
+            "stdin": True,
         }
         return self.clientHandle.containerExecCmd(containerId, execCommand, socket=True, **execOptions)
 

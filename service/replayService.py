@@ -1,13 +1,13 @@
 from utility.myDocker import ClientHandler
 import conf
-import os
-import json
 from utility.myDocker import AnalysisStreamThread
+from utility.dataBase import DataBase
 
 class ReplayService(object):
 
     def __init__(self):
         self.clientHandle = ClientHandler(base_url=conf.DOCKER_HOST)
+        self.dataBase = DataBase()
 
     def createReplayContainer(self, projectId):
         '''
@@ -54,27 +54,40 @@ class ReplayService(object):
                 return contain['Id']
         return None
 
-    def startReplayAnalysis(self, projectId, containerId, binaryName, analysisEnable, libVersion):
+    def createProjectId(self):
+        """
+        获得最大的projectId
+        """
+        result = self.dataBase.get_projects_maxId()
+        if result[0][0] is None:
+            return 1
+        else:
+            return result[0][0] + 1
+
+    def startReplayAnalysis(self, userId, containerId, binaryName, analysisEnable, libVersion, projectName):
         '''
         开始重放分析
         1 将重放容器中记录的信息，复制到复现容器的 路经中去
         2 创建运行脚本，复制到复现容器的 路径中去
         '''
-        # 生成重放容器
-        replayContainerId = self.createReplayContainer(projectId)
+        # 生成项目id
+        projectId = self.createProjectId()
         # 重放容器 映射路径
-        dst = "%s/%s" % (conf.HOST_WOKR_PATH, containerId)
+        dst = "%s/%s_%s" % (conf.HOST_WOKR_PATH, userId, projectId)
         # 复现容器 打包文件 路径
         src = "%s/record_packed" % conf.EXPLOIT_CONTAINER_PACKED_PATH
         # 判断打包文件 是否存在
         if self.clientHandle.isFileExist(containerId, src) is False:
-            return "record_packed do not exist"
+            return {'success': False, 'recordExist': False}
         # 解压文件路径
         unpacked_path = self.clientHandle.copyFromContainer(containerId, src, dst)
         # 生成分析脚本文件
         scriptPath = self.generateRunScript(unpacked_path+"/record_packed", binaryName, analysisEnable, libVersion)
+        # 生成重放容器
+        replayContainerId = self.createReplayContainer(projectId)
 
-        execId = self.execAnalysisScript(replayContainerId, scriptPath)
+        self.dataBase.insert_projects(projectId, userId, projectName, binaryName, 0, analysisEnable, "start analysis...")
+        execId = self.execAnalysisScript(replayContainerId, scriptPath, projectId)
 
         # workPath = scriptPath.replace(conf.HOST_WOKR_PATH, conf.REPLAY_CONTAINER_WORK_PATH)
         # dockerScript = "docker run --rm -v %s:%s " % (conf.HOST_WOKR_PATH, conf.REPLAY_CONTAINER_WORK_PATH) + \
@@ -91,28 +104,35 @@ class ReplayService(object):
         with open(scriptPath+"/init.py", "w") as f:
             f.write(script)
             f.close()
+        script = conf.RUN_SH % ("%s/pypy3" % conf.REPLAY_CONTAINER_PYPY_PATH, "init.py")
+        with open(scriptPath+"/run.sh", "w") as f:
+            f.write(script)
+            f.close()
         print("生成分析脚本文件")
         return scriptPath
 
-    def execAnalysisScript(self, containerId, path):
+    def execAnalysisScript(self, containerId, path, projectId):
         """
         执行 分析脚本
         """
+        analysis_output_path = path
         path = path.replace(conf.HOST_WOKR_PATH, conf.REPLAY_CONTAINER_WORK_PATH)
         execCommand = [
             "%s/pypy3" % conf.REPLAY_CONTAINER_PYPY_PATH,
-            "init.py"]
+            "init.py"
+            # "/bin/sh",
+            # "run.sh"
+        ]
         execOptions = {
             "tty": True,
-            "workdir": path,
-            "environment": ["PATH=%s:$PATH" % conf.REPLAY_CONTAINER_PYPY_PATH]
+            "workdir": path
+            # "environment": ["PATH=%s:$PATH" % conf.REPLAY_CONTAINER_PYPY_PATH]
         }
         print("执行分析脚本")
         execId, stream = self.clientHandle.containerExecCmd(containerId, execCommand, stream=True, **execOptions)
         print("over")
-        analysisStreamThread = AnalysisStreamThread(stream)
+        analysisStreamThread = AnalysisStreamThread(stream, containerId, analysis_output_path, projectId)
         analysisStreamThread.start()
-
         return execId
 
     def terminateAnalysis(self, projectId):
@@ -120,6 +140,12 @@ class ReplayService(object):
         中断分析
         """
         containerId = self.getReplayContainerId(projectId)
+        return self.clientHandle.stopContainer(containerId)
+
+    def deleteContainer(self, containerId):
+        """
+        删除容器
+        """
         return self.clientHandle.stopContainer(containerId)
 
 

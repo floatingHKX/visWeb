@@ -12,7 +12,7 @@ REPLAY_CONTAINER_WORK_PATH = "/opt/visualization/work"
 # 重放容器中pypy路径
 REPLAY_CONTAINER_PYPY_PATH = "/usr/lib/pypy3.7-v7.3.3-linux64/bin"
 # 宿主机器映射重放容器的路径
-HOST_WOKR_PATH = "/tmp/work"
+HOST_WOKR_PATH = "/home/hkx/repaly_work"
 
 # 分析脚本内容
 RUN_SCRIPT = '''import sys
@@ -25,4 +25,9 @@ rr.enable_analysis(%s)
 rr.do_analysis()
 rr.generate_report()
 
+'''
+
+# 分析启动脚本
+RUN_SH = '''#/bin/sh
+%s %s |& tee analysis_output
 '''
