@@ -10,6 +10,8 @@ from utility.dataBase import DataBase
 from service.manageService import ManageService
 import os
 from flask_apscheduler import APScheduler
+from schedule_task import schedule_task
+from flask import send_file
 
 
 class SchedulerConfig(object):
@@ -20,12 +22,13 @@ class SchedulerConfig(object):
             'args': None,
             'trigger': 'interval',
             'seconds': 5
+
         }
     ]
 
 
 def flash_projects():
-    print('schedule task:xxx')
+    schedule_task()
 
 
 app = Flask(__name__)
@@ -39,13 +42,11 @@ def index(containerId):
     # containerId = request.values.get('containerId')
     return render_template('index.html', containerId=containerId)
 
-
-@app.route('/images')
-def get_images():
-    dockerCli = ClientHandler(base_url=conf.DOCKER_HOST)
-    images = dockerCli.listImages()
-    print(images)
-
+# @app.route('/images')
+# def get_images():
+#     dockerCli = ClientHandler(base_url=conf.DOCKER_HOST)
+#     images = dockerCli.listImages()
+#     print(images)
 
 '''
 申请新容器
@@ -89,23 +90,27 @@ def start_analysis():
     return jsonify(result)
 
 '''
-中断分析
+中断分析任务
 '''
 @app.route('/terminate', methods = ['POST','GET'])
 def terminate_analysis():
     projectId = request.values.get('projectId')
     replayService = ReplayService()
-    result = replayService.terminateAnalysis(projectId)
-    return result
+    replayService.terminateAnalysis(projectId)
+    return 'OK'
 
 """
-删除任务
+删除分析任务
 """
-@app.route('/deleteproject')
+@app.route('/deleteproject', methods = ['POST','GET'])
 def delete_project():
+    userId = request.values.get('userId')
     projectId = request.values.get('projectId')
+    replayService = ReplayService()
+    replayService.terminateAnalysis(projectId)
     manageService = ManageService()
-    return manageService.delete_project(projectId)
+    manageService.delete_project(projectId, userId)
+    return 'OK'
 
 '''
 删除容器
@@ -129,6 +134,9 @@ def get_containerId_by_userId():
         return jsonify({'success': False})
     return jsonify({'containerId': containerId, 'success': True})
 
+"""
+获得项目列表
+"""
 @app.route('/projects')
 def get_projectsInfoList():
     userId = request.values.get('userId')
@@ -137,6 +145,26 @@ def get_projectsInfoList():
     manageService = ManageService()
     results = manageService.get_projects(userId, pageNo, pageSize)
     return jsonify(results)
+
+"""
+获得项目细节信息
+"""
+@app.route("/projects/detail")
+def get_projectsDetail():
+    projectId = request.values.get('projectId')
+    manageService = ManageService()
+    result = manageService.get_project_detail(projectId)
+    return jsonify(result)
+
+@app.route("/download/<userId>/<projectId>", )
+def download_report(userId, projectId):
+    # userId = request.values.get('userId')
+    # projectId = request.values.get('projectId')
+    reportPath = "%s/%s_%s_unpacked/record_packed/report.tar.gz" % (conf.HOST_WOKR_PATH, userId, projectId)
+    try:
+        return send_file(reportPath, as_attachment=True, attachment_filename="report.tar.gz")
+    except:
+        return 'OK'
 
 '''
 生成websocket链接
@@ -147,11 +175,13 @@ def echo_socket(ws, containerId):
     execId, terminalStream = terminalService.creatTerminalExec(containerId)
     terminalService.terminalThreadCreate(ws, terminalStream._sock)
 
+
 def init_filedir():
     if not os.access(conf.HOST_WOKR_PATH, os.F_OK):
         print("workplace %s do not exist." % conf.HOST_WOKR_PATH)
         os.system("mkdir %s" % conf.HOST_WOKR_PATH)
         print("workplace %s create now." % conf.HOST_WOKR_PATH)
+
 
 if __name__ == '__main__':
     init_filedir()

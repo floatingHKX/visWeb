@@ -1,13 +1,17 @@
 
+TASK_PROCESSING = 2
+TASK_FINISH = 3
+TASK_STOP = -1
+
 statusText = {
-    0: "任务进行中",
-    1: "任务完成",
+    2: "任务进行中",
+    3: "任务完成",
     -1: "任务停止"
 }
 
 statusColor = {
-    0: "processing",
-    1: "success",
+    2: "processing",
+    3: "success",
     -1: "warning"
 }
 

@@ -7,6 +7,7 @@ import os
 import subprocess
 import conf
 from utility.dataBase import DataBase
+import utility.common
 
 class ClientHandler(object):
 
@@ -184,11 +185,14 @@ class AnalysisStreamThread(threading.Thread):
         print('analysis over')
         clientHandle = ClientHandler(base_url=conf.DOCKER_HOST)
         clientHandle.stopContainer(self.containerId)
+        dataBase = DataBase()
         if os.access(self.logPath+'/html', os.F_OK):
             compress_path = "%s/report.tar.gz" % self.logPath
             report_path = "%s/html" % self.logPath
             os.system("tar -zcvf %s %s" % (compress_path, report_path))
-        dataBase = DataBase()
-        dataBase.update_projects_status_by_projectId(1, self.projectId)
+            dataBase.update_projects_status_by_projectId(utility.common.TASK_FINISH, self.projectId)
+        else:
+            dataBase.update_projects_status_by_projectId(utility.common.TASK_STOP, self.projectId)
+        dataBase.update_projects_over_by_projectId(1, self.projectId)
         print('delete analysis container')
         # print(self.outputs.read())

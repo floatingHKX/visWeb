@@ -1,6 +1,8 @@
 from utility.dataBase import DataBase
 from utility.myDocker import ClientHandler
 import conf
+import os
+import time
 from utility.common import getTaskStatus, getTaskStatusColor
 
 class ManageService(object):
@@ -34,9 +36,19 @@ class ManageService(object):
             row['status_txt'] = getTaskStatus(row['status_txt'])
         return results
 
-    def delete_project(self, projectId):
+    def get_project_detail(self, projectId):
+        result = self.database.get_projects_by_projectId(projectId)[0]
+        result['color'] = getTaskStatusColor(result['status'])
+        result['status_txt'] = getTaskStatus(result['status'])
+        result['update_time'] = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+        return result
+        
+
+    def delete_project(self, projectId, userId):
         self.database.delete_projects_by_projectId(projectId)
-        return "OK"
+        projectPath = "%s/%s_%s_unpacked" % (conf.HOST_WOKR_PATH, userId, projectId)
+        os.system("rm -rf %s" % projectPath)
+
 
     def get_containerId(self, userId):
         result = self.database.get_containers_by_userid(userId)

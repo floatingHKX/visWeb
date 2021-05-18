@@ -2,6 +2,7 @@ from utility.myDocker import ClientHandler
 import conf
 from utility.myDocker import AnalysisStreamThread
 from utility.dataBase import DataBase
+import utility.common
 
 class ReplayService(object):
 
@@ -86,7 +87,8 @@ class ReplayService(object):
         # 生成重放容器
         replayContainerId = self.createReplayContainer(projectId)
 
-        self.dataBase.insert_projects(projectId, userId, projectName, binaryName, 0, analysisEnable, "start analysis...")
+        self.dataBase.insert_projects(projectId, userId, projectName, binaryName, \
+                                      utility.common.TASK_PROCESSING, analysisEnable, "start analysis...")
         execId = self.execAnalysisScript(replayContainerId, scriptPath, projectId)
 
         # workPath = scriptPath.replace(conf.HOST_WOKR_PATH, conf.REPLAY_CONTAINER_WORK_PATH)
@@ -94,7 +96,7 @@ class ReplayService(object):
         #     "-t -w %s %s " % (workPath, conf.REPLAY_CONTAINER_IMAGE)  + \
         #                "%s/pypy3 init.py" % conf.REPLAY_CONTAINER_PYPY_PATH
         # p = self.clientHandle.execDockerCmd(dockerScript)
-        return execId
+        return {'success': True, 'recordExist': True}
 
     def generateRunScript(self, scriptPath, binaryName, analysisEnable, libVersion):
         """
@@ -140,7 +142,10 @@ class ReplayService(object):
         中断分析
         """
         containerId = self.getReplayContainerId(projectId)
-        return self.clientHandle.stopContainer(containerId)
+        if containerId is not None:
+            self.clientHandle.stopContainer(containerId)
+        self.dataBase.update_projects_status_by_projectId(utility.common.TASK_STOP, projectId)
+        self.dataBase.update_projects_over_by_projectId(1, projectId)
 
     def deleteContainer(self, containerId):
         """

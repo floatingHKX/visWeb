@@ -65,14 +65,46 @@ class DataBase(object):
         ''', (projectId, ))
         self.conn.commit()
 
+    def get_projects_by_projectId(self, projectId):
+        """
+        获得任务细节信息
+        """
+        self.conn.row_factory = self.dictFactory
+        c = self.conn.cursor()
+        c.execute('''SELECT * FROM PROJECTS WHERE projectid = ?;''', (projectId, ))
+        results = c.fetchall()
+        return results
+
+    def get_projects(self):
+        """
+        获得所有任务
+        """
+        self.conn.row_factory = self.dictFactory
+        c = self.conn.cursor()
+        c.execute('''SELECT * FROM PROJECTS''')
+        results = c.fetchall()
+        return results
+
     def insert_projects(self, projectId, userId, projectName, binaryName, status, analysis, output):
         """
         插入新任务
         """
         c = self.conn.cursor()
-        c.execute('''INSERT INTO PROJECTS (projectid, userid, projectname, binaryname, status, analysis, output, createdate) \
-        VALUES (?, ?, ?, ?, ?, DateTime('now'));
-        ''', (projectId, userId, projectName, binaryName, status, analysis, output))
+        c.execute('''INSERT INTO PROJECTS \
+        (projectid, userid, projectname, binaryname, status, analysis, output, over, createdate) \
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, DateTime('now'));
+        ''', (projectId, userId, projectName, binaryName, status, analysis, output, 0))
+        self.conn.commit()
+
+    def update_projects_over_by_projectId(self, over, projectId):
+        """
+        更新任务的更新标签
+        """
+        c = self.conn.cursor()
+        c.execute('''UPDATE PROJECTS \
+                        SET over = ?
+                        WHERE projectid = ?;
+                        ''', (over, projectId))
         self.conn.commit()
 
     def update_projects_output_by_projectId(self, output, projectId):
@@ -96,7 +128,6 @@ class DataBase(object):
                 WHERE projectid = ?;
                 ''', (status, projectId))
         self.conn.commit()
-
 
     def get_projects_by_userid(self, userId):
         """
